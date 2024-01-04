@@ -1,6 +1,6 @@
 # AC2
 
-A PettingZoo environment Ant Colony Coverage (AC2).
+A PettingZoo AEC environment for Ant Colony Coverage (AC2).
 
 ## Usage
 
@@ -16,4 +16,12 @@ configuration = AC2Configuration(
 )
 
 env = AC2(configuration=configuration)
+```
+
+The environment can be parallelized using `aec_to_parallel()`.
+
+```python
+from pettingzoo.utils.conversions import aec_to_parallel
+
+parallel_env = aec_to_parallel(env)
 ```
