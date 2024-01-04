@@ -5,6 +5,8 @@ A PettingZoo environment Ant Colony Coverage (AC2).
 ## Usage
 
 ```python
+from ac2 import AC2, AC2Configuration
+
 configuration = AC2Configuration(
     map_size=16,
     number_of_agents=16,
