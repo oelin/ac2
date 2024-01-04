@@ -1,2 +1,3 @@
-# ac2
+# AC2
+
 A PettingZoo environment Ant Colony Coverage (AC2).
