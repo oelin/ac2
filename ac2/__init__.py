@@ -132,6 +132,12 @@ class AC2(AECEnv):
     def step(self, action: ActionType) -> None:
         """Step an agent."""
 
+        if action == None:
+            self.terminations = {agent: False for agent in self.agents}
+            self.truncations = self.terminations
+
+            return
+
         x, y = self._agent_coordinates[self._agent_selection]
         x1, y1 = x, y
 
@@ -175,7 +181,7 @@ class AC2(AECEnv):
             if self._step > self.configuration.duration:
                 raise AssertionError(
                     'Step exceeds duration. In AC2, you must call `reset()` once'
-                    'the first agent has `termination=True`.'
+                    ' the first agent has `termination=True`.'
                 )
 
         # Increment agent selection.
