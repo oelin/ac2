@@ -1,3 +1,5 @@
+#@markdown AC2 environment implementation.
+
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 import math
@@ -23,7 +25,7 @@ ACTION_SOUTH = 2
 ACTION_WEST = 3
 
 
-# PPL reward.
+# Helpers.
 
 def PPL(x: np.ndarray) -> float:
     """Compute the perplexity."""
@@ -34,8 +36,6 @@ def PPL(x: np.ndarray) -> float:
 
     return perplexity
 
-
-# Environment configuration.
 
 @dataclass(frozen=True)
 class AC2Configuration:
@@ -71,8 +71,6 @@ class AC2Configuration:
     difficulty: float
     duration: int
 
-
-# Environment.
 
 class AC2(AECEnv):
     """AC2.
@@ -134,7 +132,7 @@ class AC2(AECEnv):
     def step(self, action: ActionType) -> None:
         """Step an agent."""
 
-        x, y = self._agent_coordinates[self.agent_selection]
+        x, y = self._agent_coordinates[self._agent_selection]
         x1, y1 = x, y
 
         if action == ACTION_NORTH: x1, y1 = x, y - 1
@@ -144,21 +142,21 @@ class AC2(AECEnv):
 
         # Move agent if valid.
 
-        is_valid_action = (y in range(0, self.configuration.map_size)) \
-            and (x in range(0, self.configuration.map_size)) \
+        is_valid_action = (y1 in range(0, self.configuration.map_size)) \
+            and (x1 in range(0, self.configuration.map_size)) \
             and (self._map[OBSTACLE_CHANNEL, y1, x1] == 0.) \
             and (self._map[AGENT_CHANNEL, y1, x1] == 0.) \
-        
+
         if is_valid_action:
             self._map[AGENT_CHANNEL, y, x] = 0.
             self._map[AGENT_CHANNEL, y1, x1] = 1.
-            self._agent_coordinates[self.agent_selection] = (x1, y1)
+            self._agent_coordinates[self._agent_selection] = (x1, y1)
 
         # If this was the last agent, then update the pheromone and reward. We
-        # only update after having moved every agent in order to make the 
+        # only update after having moved every agent in order to make the
         # environment parallelizable.
 
-        if self.agent_selection + 1 == self.configuration.number_of_agents:
+        if self._agent_selection + 1 == self.configuration.number_of_agents:
             self._map[PHEROMONE_CHANNEL] *= 1 - self.configuration.difficulty
             self._map[PHEROMONE_CHANNEL] += self._map[AGENT_CHANNEL]
 
@@ -182,10 +180,14 @@ class AC2(AECEnv):
 
         # Increment agent selection.
 
-        self.agent_selection = (self.agent_selection + 1) \
+        self._agent_selection = (self._agent_selection + 1) \
             % self.configuration.number_of_agents
 
-    def reset(self, seed: Optional[int] = None) -> None:
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        options: Optional = None,
+    ) -> None:
         """Reset the environment."""
 
         ## Initialize the map.
@@ -202,9 +204,9 @@ class AC2(AECEnv):
 
             if coordinate not in coordinates:
                 coordinates[coordinate] = True
-        
+
         coordinates = list(coordinates)
-        
+
         self._agent_coordinates, self._obstacle_coordinates = (
             coordinates[: self.configuration.number_of_agents],
             coordinates[self.configuration.number_of_agents :],
@@ -233,8 +235,9 @@ class AC2(AECEnv):
         # Initialize AEC attributes.
 
         agents = list(range(self.configuration.number_of_agents))
+        agents = [str(agent) for agent in agents]
 
-        self.agent_selection = 0
+        self._agent_selection = 0
         self._cumulative_rewards = {agent: 0. for agent in agents}
 
         self.agents = agents
@@ -251,15 +254,19 @@ class AC2(AECEnv):
         """Return the observation for the selected agent."""
 
         return self._map
-    
+
     def state(self) -> np.ndarray:
         return self._map
-    
+
     @property
     def infos(self) -> Dict[AgentID, Dict[str, Any]]:
         return {
-            agent: {
+            str(agent): {
                 'id': agent,
-                'coordinate': self._agent_coordinates[agent],
+                'coordinate': self._agent_coordinates[int(agent)],
             } for agent in self.agents
         }
+
+    @property
+    def agent_selection(self) -> AgentID:
+        return str(self._agent_selection)
