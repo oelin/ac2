@@ -6,6 +6,11 @@ import math
 import random
 
 import numpy as np
+import seaborn as sns
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from pettingzoo.utils.env import AECEnv, ObsType, ActionType, AgentID
 from pettingzoo.utils.conversions import aec_to_parallel
@@ -31,10 +36,13 @@ def PPL(x: np.ndarray) -> float:
     """Compute the perplexity."""
 
     distribution = (x + 1e-8) / (x + 1e-8).sum()
-    entropy = (np.log(distribution) * distribution).sum()
+    entropy = -(np.log(distribution) * distribution).sum()
     perplexity = np.exp(entropy)
 
     return perplexity
+
+def normalize(x: np.array):
+    return (x - x.min()) / (x.max() - x.min())
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,8 @@ class AC2Configuration:
     ----------
     map_size : int
         The size of the map.
+    fov_pad : int
+        The amount of padding applied to each agent's FOV.
     number_of_agents : int
         The number of agents.
     number_of_obstacles : int
@@ -58,6 +68,7 @@ class AC2Configuration:
     -------
     >>> configuration = AC2Configuration(
     ...     map_size=16,
+    ...     fov_pad=2,
     ...     number_of_agents=16,
     ...     number_of_obstacles=16,
     ...     difficulty=0.01,
@@ -66,6 +77,7 @@ class AC2Configuration:
     """
 
     map_size: int
+    fov_pad: int
     number_of_agents: int
     number_of_obstacles: int
     difficulty: float
@@ -88,6 +100,7 @@ class AC2(AECEnv):
     -------
     >>> configuration = AC2Configuration(
     ...     map_size=16,
+    ...     fov_pad=2,
     ...     number_of_agents=16,
     ...     number_of_obstacles=16,
     ...     difficulty=0.01,
@@ -113,15 +126,24 @@ class AC2(AECEnv):
 
         self.metadata = {'is_parallelizable': True}
 
+        agents = list(range(self.configuration.number_of_agents))
+        agents = [str(agent) for agent in agents]
+
+        self.agents = agents
+        self.possible_agents = agents
+        self.render_mode = None
+
     # AEC methods.
 
     def observation_space(self, agent: AgentID) -> gym.spaces.Space:
         """Return the observation space for an agent."""
 
+        fov_size = (self.configuration.fov_pad * 2) + 1
+
         return gym.spaces.Box(
             low=0.,
             high=1.,
-            shape=(3, self.configuration.map_size, self.configuration.map_size),
+            shape=(3, fov_size, fov_size),
         )
 
     def action_space(self, agent: AgentID) -> gym.spaces.Space:
@@ -167,9 +189,11 @@ class AC2(AECEnv):
             self._map[PHEROMONE_CHANNEL] += self._map[AGENT_CHANNEL]
 
             ppl = PPL(self._map[PHEROMONE_CHANNEL]) / self.configuration.number_of_agents
+            reward = ppl - self._ppl
+            self._ppl = ppl
 
             self._clear_rewards()
-            self.rewards = {agent: ppl for agent in self.agents}
+            self.rewards = {agent: reward for agent in self.agents}
             self._accumulate_rewards()
 
             self._step += 1
@@ -240,14 +264,10 @@ class AC2(AECEnv):
 
         # Initialize AEC attributes.
 
-        agents = list(range(self.configuration.number_of_agents))
-        agents = [str(agent) for agent in agents]
+        agents = self.agents
 
         self._agent_selection = 0
         self._cumulative_rewards = {agent: 0. for agent in agents}
-
-        self.agents = agents
-        self.possible_agents = agents
         self.rewards = {agent: 0. for agent in agents}
         self.terminations = {agent: False for agent in agents}
         self.truncations = self.terminations
@@ -255,14 +275,55 @@ class AC2(AECEnv):
         # Initialize remaining attributes.
 
         self._step = 0
+        self._ppl = 0.
 
     def observe(self, agent: AgentID) -> ObsType:
         """Return the observation for the selected agent."""
 
-        return self._map
+        # Reconstruct map with padding.
+
+        agents = np.pad(
+            array=self._map[AGENT_CHANNEL],
+            pad_width=self.configuration.fov_pad,
+            mode='constant',
+            constant_values=0.,
+        )
+
+        obstacles = np.pad(
+            array=self._map[OBSTACLE_CHANNEL],
+            pad_width=self.configuration.fov_pad,
+            mode='constant',
+            constant_values=1.,
+        )
+
+        pheromone = np.pad(
+            array=self._map[PHEROMONE_CHANNEL],
+            pad_width=self.configuration.fov_pad,
+            mode='constant',
+            constant_values=0.,
+        )
+
+        map = np.zeros((3, *agents.shape))
+        map[AGENT_CHANNEL] = agents
+        map[OBSTACLE_CHANNEL] = obstacles
+        map[PHEROMONE_CHANNEL] = normalize(pheromone)
+
+        # Create a local view for the current agent.
+
+        x, y = self._agent_coordinates[int(agent)]
+        x = x + self.configuration.fov_pad
+        y = y + self.configuration.fov_pad
+
+        fov = map[
+            :,
+            y - self.configuration.fov_pad : y + self.configuration.fov_pad + 1,
+            x - self.configuration.fov_pad : x + self.configuration.fov_pad + 1,
+        ]
+
+        return fov
 
     def state(self) -> np.ndarray:
-        return self._map
+        return self._map.copy()
 
     @property
     def infos(self) -> Dict[AgentID, Dict[str, Any]]:
