@@ -1,4 +1,3 @@
-#@markdown AC2 environment implementation.
 
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
@@ -84,6 +83,8 @@ class AC2Configuration:
     duration: int
 
 
+gem = gem_policy(None)
+
 class AC2(AECEnv):
     """AC2.
 
@@ -160,6 +161,8 @@ class AC2(AECEnv):
 
             return
 
+        # self.rewards[self.agent_selection] = 1. if action == self._gem_actions[self.agent_selection] else -1.
+
         x, y = self._agent_coordinates[self._agent_selection]
         x1, y1 = x, y
 
@@ -189,7 +192,7 @@ class AC2(AECEnv):
             self._map[PHEROMONE_CHANNEL] += self._map[AGENT_CHANNEL]
 
             ppl = PPL(self._map[PHEROMONE_CHANNEL]) / self.configuration.number_of_agents
-            reward = ppl - self._ppl
+            reward = (ppl - self._ppl) #* 1/(self._step)
             self._ppl = ppl
 
             self._clear_rewards()
@@ -276,6 +279,7 @@ class AC2(AECEnv):
 
         self._step = 0
         self._ppl = 0.
+        self._gem_actions = {}
 
     def observe(self, agent: AgentID) -> ObsType:
         """Return the observation for the selected agent."""
@@ -319,6 +323,8 @@ class AC2(AECEnv):
             y - self.configuration.fov_pad : y + self.configuration.fov_pad + 1,
             x - self.configuration.fov_pad : x + self.configuration.fov_pad + 1,
         ]
+
+        # self._gem_actions[agent] = gem(fov)
 
         return fov
 
